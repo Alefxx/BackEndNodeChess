@@ -1,3 +1,4 @@
+// src/features/profile/ProfileDAO.ts
 import { ProfileModel, IProfile } from './ProfileModel';
 
 /**
@@ -21,7 +22,20 @@ export class ProfileDAO {
     }
 
     /**
-     * Atualiza atomicamente o rating de um usuário.
+     * Atualiza os campos editáveis (nome e foto) de um perfil existente no banco de dados.
+     * Utiliza o operador $set para garantir uma alteração atômica e segura.
+     * @returns {Promise<IProfile | null>} O documento de perfil atualizado ou null se não encontrado.
+     */
+    public async atualizarPerfil(username: string, dadosAtualizados: { nome: string; foto: string }): Promise<IProfile | null> {
+        return await ProfileModel.findOneAndUpdate(
+            { username },
+            { $set: dadosAtualizados },
+            { returnDocument:'after' } // Retorna o documento já com as alterações aplicadas
+        );
+    }
+
+    /**
+     * Atualiza atomicamente o rating (Elo) de um usuário.
      */
     public async atualizarRating(username: string, novoRating: number): Promise<void> {
         await ProfileModel.updateOne({ username }, { rating: novoRating });

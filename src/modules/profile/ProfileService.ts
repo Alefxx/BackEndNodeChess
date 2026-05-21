@@ -62,4 +62,22 @@ export class ProfileService {
         await this.profileDAO.atualizarRating(username, ratingFinal);
         console.log(`[SERVICE] Rating atualizado: ${username} -> ${ratingFinal}`);
     }
+    
+        /**
+     * Atualiza os dados cadastrais (nome e foto) do perfil do usuário.
+     */
+    public async atualizarPerfil(username: string, novoNome: string, novaFoto: string): Promise<IProfile | null> {
+        // Busca se o usuário realmente existe antes de alterar
+        const usuario = await this.profileDAO.buscarPorUsername(username);
+        if (!usuario) {
+            throw new Error("Usuário não encontrado.");
+        }
+
+        // Executa a atualização no banco de dados através do DAO
+        return await this.profileDAO.atualizarPerfil(username, {
+            nome: novoNome,
+            foto: novaFoto
+        });
+    }
+
 }

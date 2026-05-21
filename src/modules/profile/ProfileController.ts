@@ -1,3 +1,4 @@
+// src/features/profile/ProfileController.ts
 import { Request, Response } from 'express';
 import { ProfileService } from './ProfileService';
 
@@ -18,7 +19,7 @@ export class ProfileController {
     public login = async (req: Request, res: Response): Promise<any> => {
         try {
             const { username, senha } = req.body;
-            const usuario = await this.profileService.buscarPorUsername(username);
+            const usuario = await this.profileService.buscarPorUsername(username as string);
 
             // Verificação de segurança (plaintext para este MVP, recomenda-se Bcrypt futuramente)
             if (usuario && usuario.senha === senha) {
@@ -46,11 +47,53 @@ export class ProfileController {
         try {
             const { nome, username, senha } = req.body;
             
-            await this.profileService.cadastrarUsuario({ nome, username, senha });
+            await this.profileService.cadastrarUsuario({ 
+                nome: nome as string, 
+                username: username as string, 
+                senha: senha as string 
+            });
             
             return res.status(201).json({ sucesso: true, mensagem: "Conta criada com sucesso." });
         } catch (error: any) {
             return res.status(400).json({ sucesso: false, erro: error.message });
+        }
+    }
+
+    /**
+     * Endpoint para atualização de dados do perfil (nome e foto).
+     */
+    public atualizarPerfil = async (req: Request, res: Response): Promise<any> => {
+        try {
+            // CORREÇÃO: Afirmamos ao TypeScript que os dados recebidos são strings (Type Casting)
+            const username = req.params.username as string;
+            const nome = req.body.nome as string;
+            const foto = req.body.foto as string;
+
+            // Validação básica de entrada (Security by Design)
+            if (!nome || !foto) {
+                return res.status(400).json({ sucesso: false, erro: 'Nome e foto são campos obrigatórios.' });
+            }
+
+            // Agora o TypeScript aceita sem reclamar
+            const usuarioAtualizado = await this.profileService.atualizarPerfil(username, nome, foto);
+
+            // Retorna o perfil atualizado, protegendo campos sensíveis como a senha
+            return res.status(200).json({
+                sucesso: true,
+                mensagem: "Perfil atualizado com sucesso.",
+                perfil: {
+                    nome: usuarioAtualizado?.nome,
+                    username: usuarioAtualizado?.username,
+                    rating: usuarioAtualizado?.rating,
+                    foto: usuarioAtualizado?.foto
+                }
+            });
+
+        } catch (error: any) {
+            if (error.message === "Usuário não encontrado.") {
+                return res.status(404).json({ sucesso: false, erro: error.message });
+            }
+            return res.status(500).json({ sucesso: false, erro: 'Falha interna ao atualizar o perfil.' });
         }
     }
 }

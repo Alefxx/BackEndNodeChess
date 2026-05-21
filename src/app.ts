@@ -30,12 +30,15 @@ import { botRoutes } from './routes/bot.routes';
 import { timeRoutes } from './routes/time.routes';
 import { matchRoutes } from './routes/match.routes';
 import { clockRoutes } from './routes/clock.routes'; 
+import { profileRoutes } from './routes/profile.routes'; // <--- NOVO: Importação das rotas de perfil
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
+// ==========================================
 // 1. INJEÇÃO DE DEPENDÊNCIAS
+// ==========================================
 
 // Perfil
 const profileDAO = new ProfileDAO();
@@ -61,7 +64,9 @@ const matchController = new MatchController(matchService);
 // Passamos o matchService para ele conseguir buscar a partida na RAM!
 const clockController = new ClockController(matchService);
 
+// ==========================================
 // 2. CONFIGURAÇÃO DE ROTAS
+// ==========================================
 
 app.use('/', authRoutes(profileController));
 app.use('/', botRoutes(botController));
@@ -69,18 +74,24 @@ app.use('/', timeRoutes(timeController));
 app.use('/', matchRoutes(matchController));
 app.use('/', clockRoutes(clockController));
 
+// NOVO: Adicionamos o prefixo '/perfil' para que tudo dentro do profileRoutes 
+// responda corretamente (ex: PUT /perfil/:username)
+app.use('/perfil', profileRoutes(profileController)); 
+
+// ==========================================
 // 3. START SERVER & BANCO
+// ==========================================
 
 const PORT = process.env.PORT || 3000;
 const MONGO_URI = process.env.MONGO_URI;
 
 mongoose.connect(MONGO_URI!)
     .then(() => {
-        console.log('conectado ao MongoDB Atlas');
+        console.log('✅ Conectado ao MongoDB Atlas');
         app.listen(PORT, () => {
-            console.log(` `);
+            console.log(`🚀 Servidor rodando na porta ${PORT}`);
         });
     })
-    .catch((error) => console.error('erro no MongoDB:', error));
+    .catch((error) => console.error('❌ Erro no MongoDB:', error));
 
 export default app;
