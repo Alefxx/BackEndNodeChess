@@ -23,7 +23,9 @@ interface PartidaAtiva {
     jogadorBrancas: string; 
     jogadorPretas: string;
     pgn: string[]; 
-    tipoPartida: 'bot' | 'multiplayer'; 
+    fenHistory: string[]; // NOVO: A "fita da partida" mantida na memória volátil
+    // Atualiza a interface em memória para refletir a possibilidade de sessões presenciais
+    tipoPartida: 'bot' | 'multiplayer' | 'local'; 
 }
 
 /**
@@ -44,17 +46,21 @@ export class MatchService {
     }
 
     /**
-     * Inicializa uma nova instância de partida.
+     * Inicializa uma instância de partida.
      * Configura perfis, regras de tempo, motor do tabuleiro e persiste o registro inicial no banco.
      */
-    public async criarNovaPartida(brancasUsername: string, pretasUsername: string, tempoId: string | null, tipoPartida: 'bot' | 'multiplayer') {
+    // Tipagem atualizada para receber 'local' nos parâmetros de criação
+    public async criarNovaPartida(brancasUsername: string, pretasUsername: string, tempoId: string | null, tipoPartida: 'bot' | 'multiplayer' | 'local') {
         const perfilBrancas = await this.profileService.buscarPorUsername(brancasUsername);
         const perfilPretas = await this.profileService.buscarPorUsername(pretasUsername);
 
         if (tipoPartida === 'multiplayer') {
             if (!perfilBrancas || !perfilPretas) throw new Error('Ambos os jogadores precisam existir para uma partida multiplayer.');
-        } else {
+        } else if (tipoPartida === 'bot') {
             if (!perfilBrancas && !perfilPretas) throw new Error('Nenhum jogador humano válido foi encontrado para a partida contra o bot.');
+        } else if (tipoPartida === 'local') {
+            // Garante que o host (dono do aparelho) esteja autenticado, independentemente de qual cor escolheu jogar, permitindo que o oponente seja um visitante não registrado
+            if (!perfilBrancas && !perfilPretas) throw new Error('Pelo menos um jogador registrado precisa iniciar a partida presencial.');
         }
 
         let controleTempo = null;
@@ -69,6 +75,9 @@ export class MatchService {
         const estadoInicial = BoardController.gerarEstadoInicialParaVirtualBoard();
         const virtualBoard = new VirtualBoard(estadoInicial);
         const boardService = new VirtualBoardService(virtualBoard); 
+
+        // NOVO: Extrai o FEN inicial exato (quadro 0 da nossa fita)
+        const fenInicial = boardService.tabuleiro.gerarFEN('w');
 
         const partidaDb = await this.matchDAO.criarPartida({
             jogadorBrancas: brancasUsername,
@@ -87,6 +96,7 @@ export class MatchService {
             jogadorBrancas: brancasUsername,
             jogadorPretas: pretasUsername,
             pgn: [],
+            fenHistory: [fenInicial], // NOVO: Inicia a fita com o quadro 0
             tipoPartida: tipoPartida
         };
 
@@ -173,6 +183,9 @@ export class MatchService {
         // 5. ATUALIZAÇÃO DE ESTADO (FEN): Gera a string de estado para o próximo turno
         const proximoTurno = corDoTurno === 'branca' ? 'preta' : 'branca';
         const novoFen = partida.boardService.tabuleiro.gerarFEN(proximoTurno === 'branca' ? 'w' : 'b');
+        
+        // NOVO: Adiciona o quadro atual na fita da partida
+        partida.fenHistory.push(novoFen);
 
         // 6. ATUALIZAÇÃO DO RELÓGIO (Post-move): Registra o consumo e aplica incrementos
         let temposAtuais = null;
@@ -224,6 +237,7 @@ export class MatchService {
     public async finalizarPartida(partidaId: string, resultado: 'brancas_vencem' | 'pretas_vencem' | 'empate') {
         const partida = this.buscarPartidaAtiva(partidaId);
         
+        // Isola o recálculo e gravação de Elo exclusivamente para partidas online competitivas. Modalidades como 'local' ou contra 'bot' encerram a sessão sem afetar a pontuação de ranking do jogador.
         if (partida.tipoPartida === 'multiplayer') {
             const perfilBrancas = await this.profileService.buscarPorUsername(partida.jogadorBrancas);
             const perfilPretas = await this.profileService.buscarPorUsername(partida.jogadorPretas);
@@ -242,7 +256,9 @@ export class MatchService {
         }
         
         const historicoTempos = partida.clockService ? partida.clockService.obterHistoricoDeTempos() : [];
-        await this.matchDAO.finalizarPartida(partida.dbId, resultado, partida.pgn, historicoTempos);
+        
+        // NOVO: Passando o fenHistory para ser persistido no banco
+        await this.matchDAO.finalizarPartida(partida.dbId, resultado, partida.pgn, historicoTempos, partida.fenHistory);
         
         // Liberação de recursos da memória RAM
         this.partidasAtivas.delete(partidaId);
@@ -256,5 +272,14 @@ export class MatchService {
         const K = 32; 
         const expectativa = 1 / (1 + Math.pow(10, (ratingOponente - ratingAtual) / 400));
         return Math.round(ratingAtual + K * (pontuacao - expectativa));
+    }
+
+    /**
+     * NOVO: Ponto de entrada no Service para delegar o registro da avaliação ao DAO.
+     * Ignora se a partida está ativa na memória (Stateless), permitindo atualizações
+     * mesmo após a partida ter sido encerrada e removida da RAM.
+     */
+    public async registrarAvaliacao(partidaId: string, codigo: number): Promise<void> {
+        await this.matchDAO.registrarAvaliacao(partidaId, codigo);
     }
 }

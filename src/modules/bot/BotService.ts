@@ -26,10 +26,18 @@ export class BotService {
 
         const botsIniciais = [
             // Perfil Iniciante: Baixa profundidade e alta probabilidade de lances aleatórios
-            { nome: "Iniciante", rating: 400, foto: "/img/bot_1.png", skillLevel: 0, depth: 1, probabilidadeErro: 0.6 },
+            { nome: "Iniciante", rating: 200, foto: "/img/bot_1.png", skillLevel: 0, depth: 1, probabilidadeErro: 0.9 },
+
+
+
+
+          { nome: "Amador", rating: 400, foto: "/img/bot_1.png", skillLevel: 0, depth: 1, probabilidadeErro: 0.7 },
+
+
+          { nome: "Iniciante", rating: 600, foto: "/img/bot_1.png", skillLevel: 0, depth: 1, probabilidadeErro: 0.5 },
             
             // Perfil Amador: Equilíbrio entre erro e técnica básica
-            { nome: "Amador", rating: 800, foto: "/img/bot_2.png", skillLevel: 0, depth: 1, probabilidadeErro: 0.3 },
+            { nome: "Intermediario", rating: 800, foto: "/img/bot_2.png", skillLevel: 0, depth: 1, probabilidadeErro: 0.3 },
             
             // Perfil Avançado: Sem erros propositais, análise de lances moderada
             { nome: "Avançado", rating: 1500, foto: "/img/bot_3.png", skillLevel: 11, depth: 3, probabilidadeErro: 0.0 },

@@ -74,7 +74,6 @@ app.use('/', timeRoutes(timeController));
 app.use('/', matchRoutes(matchController));
 app.use('/', clockRoutes(clockController));
 
-// NOVO: Adicionamos o prefixo '/perfil' para que tudo dentro do profileRoutes 
 // responda corretamente (ex: PUT /perfil/:username)
 app.use('/perfil', profileRoutes(profileController)); 
 

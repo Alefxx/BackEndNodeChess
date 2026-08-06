@@ -1,3 +1,4 @@
+// src/modules/match/MatchController.ts
 import { MatchService } from './MatchService';
 import { Request, Response } from 'express';
 
@@ -12,9 +13,6 @@ export class MatchController {
         this.matchService = matchService;
     }
 
-    /**
-     * Inicializa uma nova partida e retorna o estado inicial, incluindo o FEN de abertura.
-     */
     public criarPartida = async (req: Request, res: Response): Promise<any> => {
         try {
             const { brancasUsername, pretasUsername, tempoId, tipoPartida } = req.body;
@@ -30,6 +28,7 @@ export class MatchController {
             return res.status(201).json({
                 sucesso: true,
                 partidaId: partida.dbId,
+                tipoPartida: partida.tipoPartida,
                 jogadores: {
                     brancas: partida.jogadorBrancas,
                     pretas: partida.jogadorPretas
@@ -44,10 +43,6 @@ export class MatchController {
         }
     }
 
-    /**
-     * Recupera o estado completo de uma partida ativa na memória.
-     * Utilizado para sincronização inicial ou recuperação após refresh do cliente.
-     */
     public obterEstado = (req: Request, res: Response): any => {
         try {
             const id = req.params.id as string;
@@ -68,9 +63,6 @@ export class MatchController {
         }
     }
 
-    /**
-     * Retorna a lista de coordenadas válidas para uma peça específica.
-     */
     public obterMovimentos = (req: Request, res: Response): any => {
         try {
             const id = req.params.id as string;
@@ -88,10 +80,6 @@ export class MatchController {
         }
     }
 
-    /**
-     * Processa a tentativa de movimento. Gerencia o estado de "Pausa para Promoção"
-     * caso o movimento seja válido mas dependa de uma escolha de peça do usuário.
-     */
     public executarMovimento = async (req: Request, res: Response): Promise<any> => {
         try {
             const id = req.params.id as string;
@@ -100,7 +88,6 @@ export class MatchController {
             const resposta = await this.matchService.executarJogada(id, origem, destino, corDoTurnoAtual, historicoCapturas, promocao);
 
             if (resposta.sucesso) {
-                // Caso o movimento resulte em promoção e a peça ainda não tenha sido definida
                 if (resposta.requerPromocao) {
                     return res.json({ 
                         sucesso: true, 
@@ -109,7 +96,6 @@ export class MatchController {
                     });
                 }
 
-                // Fluxo padrão para lances comuns ou promoções já definidas
                 return res.json({ 
                     sucesso: true,
                     detalhes: resposta.detalhes, 
@@ -123,6 +109,28 @@ export class MatchController {
             }
         } catch (error: any) {
             return res.status(404).json({ erro: error.message });
+        }
+    }
+
+    /**
+     * Recebe a requisição assíncrona do front com a avaliação da jogada (motor Stockfish do cliente).
+     * Essa rota é projetada para ser leve, independente do estado em RAM, 
+     * focando apenas em adicionar o log analítico (código numérico) ao histórico da partida no banco de dados.
+     */
+    public registrarAvaliacao = async (req: Request, res: Response): Promise<any> => {
+        try {
+            const id = req.params.id as string;
+            const { codigo } = req.body;
+
+            if (codigo === undefined || codigo === null) {
+                return res.status(400).json({ erro: 'Código de avaliação ausente.' });
+            }
+
+            await this.matchService.registrarAvaliacao(id, Number(codigo));
+
+            return res.json({ sucesso: true });
+        } catch (error: any) {
+            return res.status(500).json({ erro: error.message || 'Erro ao registrar avaliação.' });
         }
     }
 }

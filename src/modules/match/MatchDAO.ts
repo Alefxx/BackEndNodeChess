@@ -15,12 +15,13 @@ export class MatchDAO {
 
     /**
      * Finaliza o registro da partida, atualizando o status final,
-     * histórico de lances (PGN) e logs detalhados do relógio.
+     * histórico de lances (PGN), posições do tabuleiro (FEN) e logs detalhados do relógio.
      */
-    public async finalizarPartida(id: string, status: string, pgn: string[], historicoTempos: string[] = []): Promise<void> {
+    public async finalizarPartida(id: string, status: string, pgn: string[], historicoTempos: string[] = [], fenHistory: string[] = []): Promise<void> {
         await MatchModel.findByIdAndUpdate(id, { 
             status: status,
             pgn: pgn,
+            fenHistory: fenHistory, // NOVO: Salvando a "fita da partida" no banco de dados
             historicoTempos: historicoTempos
         });
     }
@@ -30,5 +31,15 @@ export class MatchDAO {
      */
     public async buscarPartidaPorId(id: string): Promise<IMatch | null> {
         return await MatchModel.findById(id);
+    }
+
+    /**
+     * Adiciona um código de avaliação gerado pela engine do frontend diretamente ao array da partida.
+     * Operação atômica ($push) para garantir segurança e alta performance.
+     */
+    public async registrarAvaliacao(id: string, codigo: number): Promise<void> {
+        await MatchModel.findByIdAndUpdate(id, {
+            $push: { analise: codigo.toString() }
+        });
     }
 }
