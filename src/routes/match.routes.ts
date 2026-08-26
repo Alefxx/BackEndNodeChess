@@ -12,7 +12,10 @@ export function matchRoutes(matchController: MatchController): Router {
     router.get('/partida/:id/movimentos/:origem', matchController.obterMovimentos);
     router.post('/partida/:id/mover', matchController.executarMovimento);
     
-    // NOVO: Ação assíncrona pós/durante o jogo para salvar as avaliações da engine
+    // NOVO: Rota para desistência
+    router.post('/partida/:id/desistir', matchController.desistir);
+    
+    // Ação assíncrona pós/durante o jogo para salvar as avaliações da engine
     router.post('/partida/:id/avaliacao', matchController.registrarAvaliacao);
 
     return router;

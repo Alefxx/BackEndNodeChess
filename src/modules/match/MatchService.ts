@@ -23,8 +23,7 @@ interface PartidaAtiva {
     jogadorBrancas: string; 
     jogadorPretas: string;
     pgn: string[]; 
-    fenHistory: string[]; // NOVO: A "fita da partida" mantida na memória volátil
-    // Atualiza a interface em memória para refletir a possibilidade de sessões presenciais
+    turnoAtual: 'branca' | 'preta'; // NOVO: Controle seguro do turno pelo Backend
     tipoPartida: 'bot' | 'multiplayer' | 'local'; 
 }
 
@@ -49,7 +48,6 @@ export class MatchService {
      * Inicializa uma instância de partida.
      * Configura perfis, regras de tempo, motor do tabuleiro e persiste o registro inicial no banco.
      */
-    // Tipagem atualizada para receber 'local' nos parâmetros de criação
     public async criarNovaPartida(brancasUsername: string, pretasUsername: string, tempoId: string | null, tipoPartida: 'bot' | 'multiplayer' | 'local') {
         const perfilBrancas = await this.profileService.buscarPorUsername(brancasUsername);
         const perfilPretas = await this.profileService.buscarPorUsername(pretasUsername);
@@ -59,7 +57,6 @@ export class MatchService {
         } else if (tipoPartida === 'bot') {
             if (!perfilBrancas && !perfilPretas) throw new Error('Nenhum jogador humano válido foi encontrado para a partida contra o bot.');
         } else if (tipoPartida === 'local') {
-            // Garante que o host (dono do aparelho) esteja autenticado, independentemente de qual cor escolheu jogar, permitindo que o oponente seja um visitante não registrado
             if (!perfilBrancas && !perfilPretas) throw new Error('Pelo menos um jogador registrado precisa iniciar a partida presencial.');
         }
 
@@ -75,9 +72,6 @@ export class MatchService {
         const estadoInicial = BoardController.gerarEstadoInicialParaVirtualBoard();
         const virtualBoard = new VirtualBoard(estadoInicial);
         const boardService = new VirtualBoardService(virtualBoard); 
-
-        // NOVO: Extrai o FEN inicial exato (quadro 0 da nossa fita)
-        const fenInicial = boardService.tabuleiro.gerarFEN('w');
 
         const partidaDb = await this.matchDAO.criarPartida({
             jogadorBrancas: brancasUsername,
@@ -96,7 +90,7 @@ export class MatchService {
             jogadorBrancas: brancasUsername,
             jogadorPretas: pretasUsername,
             pgn: [],
-            fenHistory: [fenInicial], // NOVO: Inicia a fita com o quadro 0
+            turnoAtual: 'branca', // Inicializa o turno com as brancas
             tipoPartida: tipoPartida
         };
 
@@ -104,27 +98,18 @@ export class MatchService {
         return partidaCompleta;
     }
 
-    /**
-     * Recupera a instância ativa da partida através do ID de sessão.
-     */
     public buscarPartidaAtiva(partidaId: string): PartidaAtiva {
         const partida = this.partidasAtivas.get(partidaId);
         if (!partida) throw new Error('Partida não localizada em memória volátil.');
         return partida;
     }
 
-    /**
-     * Consulta o estado atual do relógio para sincronização de UI.
-     */
     public obterTempoDaPartida(partidaId: string) {
         const partida = this.buscarPartidaAtiva(partidaId);
         if (!partida.clockService) return null;
         return partida.clockService.obterTemposReais();
     }
 
-    /**
-     * Retorna o mapeamento atual de peças para renderização visual.
-     */
     public obterTabuleiroVisual(partidaId: string): Record<string, any> {
         const partida = this.buscarPartidaAtiva(partidaId);
         const snapshotMap = partida.boardService.tabuleiro.obterSnapshot();
@@ -133,23 +118,22 @@ export class MatchService {
         return tabuleiroVisual;
     }
 
-    /**
-     * Delega ao MoveController o cálculo de destinos legais para uma peça.
-     */
-    public obterMovimentosValidos(partidaId: string, origem: string, corDoTurno: 'branca' | 'preta') {
+    public obterMovimentosValidos(partidaId: string, origem: string) {
         const partida = this.buscarPartidaAtiva(partidaId);
         const moveController = new MoveController(partida.boardService);
-        return moveController.solicitarCasasPossiveis(origem as Posicao, corDoTurno);
+        // Utiliza o turno armazenado na sessão, ignorando solicitações forjadas do cliente
+        return moveController.solicitarCasasPossiveis(origem as Posicao, partida.turnoAtual);
     }
 
     /**
      * Fluxo de execução de jogada.
-     * Coordena validação física, transição de estado, promoção de peões e verificação de fim de jogo.
+     * Modificado para não receber a cor do turno como parâmetro (garante a segurança).
      */
-    public async executarJogada(partidaId: string, origem: string, destino: string, corDoTurno: 'branca' | 'preta', historicoCapturas: string[], promocao?: string) {
+    public async executarJogada(partidaId: string, origem: string, destino: string, historicoCapturas: string[], promocao?: string) {
         const partida = this.buscarPartidaAtiva(partidaId);
+        const corDoTurno = partida.turnoAtual; // Leitura direta da autoridade de estado
         
-        // 1. VALIDAÇÃO CRONOMÉTRICA (Pre-move): Verifica se o tempo expirou antes do lance
+        // 1. VALIDAÇÃO CRONOMÉTRICA
         if (partida.clockService) {
             const temposAntes = partida.clockService.obterTemposReais();
             if (temposAntes.fimNoTempo) {
@@ -159,41 +143,38 @@ export class MatchService {
             }
         }
 
-        // 2. PROCESSAMENTO FÍSICO: Executa a transposição das peças no motor virtual
+        // 2. PROCESSAMENTO FÍSICO
         const moveService = new MoveService(partida.boardService);
         const resultado = moveService.executarMove(origem as Posicao, destino as Posicao, corDoTurno, historicoCapturas, promocao);
 
-        // Interrupção para seleção de peça em caso de promoção pendente
         if (resultado.requerPromocao) {
             return { sucesso: true, requerPromocao: true };
         }
 
         if (!resultado.sucesso) return { sucesso: false };
 
-        // 3. EXECUÇÃO DE PROMOÇÃO: Converte o peão na peça selecionada (Q, R, B, N)
+        // 3. EXECUÇÃO DE PROMOÇÃO
         if (promocao) {
             Promotion.executar(partida.boardService.tabuleiro, destino as Posicao, promocao);
         }
 
-        // 4. PERSISTÊNCIA DE LOG (PGN): Registra o lance na notação oficial do histórico
+        // 4. PERSISTÊNCIA DE LOG (PGN)
         let lanceStr = `${origem}-${destino}`;
         if (promocao) lanceStr += `=${promocao.toUpperCase()}`; 
         partida.pgn.push(lanceStr); 
 
-        // 5. ATUALIZAÇÃO DE ESTADO (FEN): Gera a string de estado para o próximo turno
-        const proximoTurno = corDoTurno === 'branca' ? 'preta' : 'branca';
-        const novoFen = partida.boardService.tabuleiro.gerarFEN(proximoTurno === 'branca' ? 'w' : 'b');
+        // 5. ATUALIZAÇÃO DE ESTADO
+        // Alterna o turno na memória do servidor
+        partida.turnoAtual = corDoTurno === 'branca' ? 'preta' : 'branca';
         
-        // NOVO: Adiciona o quadro atual na fita da partida
-        partida.fenHistory.push(novoFen);
+        const novoFen = partida.boardService.tabuleiro.gerarFEN(partida.turnoAtual === 'branca' ? 'w' : 'b');
 
-        // 6. ATUALIZAÇÃO DO RELÓGIO (Post-move): Registra o consumo e aplica incrementos
+        // 6. ATUALIZAÇÃO DO RELÓGIO
         let temposAtuais = null;
         if (partida.clockService) {
             partida.clockService.registrarLance(corDoTurno, lanceStr);
             temposAtuais = partida.clockService.obterTemposReais();
             
-            // Verificação de vitória por tempo imediata
             if (temposAtuais.fimNoTempo) {
                 const vencedorStr = temposAtuais.vencedorPorTempo === 'branca' ? 'brancas_vencem' : 'pretas_vencem';
                 await this.finalizarPartida(partidaId, vencedorStr);
@@ -208,9 +189,9 @@ export class MatchService {
             }
         }
 
-        // 7. AVALIAÇÃO DE CONDIÇÕES DE TÉRMINO (RegrasService)
+        // 7. AVALIAÇÃO DE CONDIÇÕES DE TÉRMINO
         const regrasService = new RegrasService(partida.boardService);
-        const status = regrasService.analisarStatusGeral(proximoTurno);
+        const status = regrasService.analisarStatusGeral(partida.turnoAtual);
 
         if (status.fimDeJogo) {
             let resultadoFinal: 'brancas_vencem' | 'pretas_vencem' | 'empate' = 'empate';
@@ -231,13 +212,30 @@ export class MatchService {
     }
 
     /**
-     * Finaliza a sessão da partida.
-     * Calcula o ajuste de Elo Rating, persiste o estado final no banco e libera a memória.
+     * Processa a desistência voluntária de um jogador.
      */
+    public async desistirPartida(partidaId: string, corQueDesistiu: 'branca' | 'preta') {
+        // Encontra a partida (se não achar, vai disparar o erro padrão)
+        this.buscarPartidaAtiva(partidaId);
+        
+        // Se as brancas desistem, pretas vencem, e vice-versa.
+        const vencedor = corQueDesistiu === 'branca' ? 'preta' : 'branca';
+        const resultadoFinal = vencedor === 'branca' ? 'brancas_vencem' : 'pretas_vencem';
+        
+        // Salva a partida, calcula Elo e limpa da memória
+        await this.finalizarPartida(partidaId, resultadoFinal);
+        
+        // Retorna o status no formato que o Frontend (useGameRulesMatch) entende
+        return {
+            fimDeJogo: true,
+            vencedor: vencedor,
+            motivo: 'abandono'
+        };
+    }
+
     public async finalizarPartida(partidaId: string, resultado: 'brancas_vencem' | 'pretas_vencem' | 'empate') {
         const partida = this.buscarPartidaAtiva(partidaId);
         
-        // Isola o recálculo e gravação de Elo exclusivamente para partidas online competitivas. Modalidades como 'local' ou contra 'bot' encerram a sessão sem afetar a pontuação de ranking do jogador.
         if (partida.tipoPartida === 'multiplayer') {
             const perfilBrancas = await this.profileService.buscarPorUsername(partida.jogadorBrancas);
             const perfilPretas = await this.profileService.buscarPorUsername(partida.jogadorPretas);
@@ -257,28 +255,17 @@ export class MatchService {
         
         const historicoTempos = partida.clockService ? partida.clockService.obterHistoricoDeTempos() : [];
         
-        // NOVO: Passando o fenHistory para ser persistido no banco
-        await this.matchDAO.finalizarPartida(partida.dbId, resultado, partida.pgn, historicoTempos, partida.fenHistory);
+        await this.matchDAO.finalizarPartida(partida.dbId, resultado, partida.pgn, historicoTempos, []);
         
-        // Liberação de recursos da memória RAM
         this.partidasAtivas.delete(partidaId);
     }
 
-    /**
-     * Implementação da fórmula de Rating Elo (K=32).
-     * Calcula a variação de pontuação baseada na probabilidade de vitória (expectativa).
-     */
     private calcularNovoElo(ratingAtual: number, ratingOponente: number, pontuacao: number): number {
         const K = 32; 
         const expectativa = 1 / (1 + Math.pow(10, (ratingOponente - ratingAtual) / 400));
         return Math.round(ratingAtual + K * (pontuacao - expectativa));
     }
 
-    /**
-     * NOVO: Ponto de entrada no Service para delegar o registro da avaliação ao DAO.
-     * Ignora se a partida está ativa na memória (Stateless), permitindo atualizações
-     * mesmo após a partida ter sido encerrada e removida da RAM.
-     */
     public async registrarAvaliacao(partidaId: string, codigo: number): Promise<void> {
         await this.matchDAO.registrarAvaliacao(partidaId, codigo);
     }

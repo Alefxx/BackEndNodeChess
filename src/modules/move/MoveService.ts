@@ -149,11 +149,12 @@ export class MoveService {
         this.boardService.tabuleiro.setPeca(destino, peca);
         this.boardService.tabuleiro.removerPeca(origem);
 
-        // Registro de posição para validação de empate por tripla repetição
-        const repeticoes = this.boardService.registrarPosicaoNoHistorico(zeraContagem);
+        const corAdversaria = corDoTurno === 'branca' ? 'preta' : 'branca';
+
+        // Registro de posição para validação de empate por tripla repetição (Agora recebe a cor do adversário, que é quem vai jogar)
+        const repeticoes = this.boardService.registrarPosicaoNoHistorico(corAdversaria, zeraContagem);
 
         // Avaliação de ameaças ao Rei adversário após o lance concluído
-        const corAdversaria = corDoTurno === 'branca' ? 'preta' : 'branca';
         const isXeque = this.boardService.verificarReiEmXeque(corAdversaria);
 
         return { 

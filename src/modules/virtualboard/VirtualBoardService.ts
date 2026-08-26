@@ -11,15 +11,15 @@ export class VirtualBoardService {
         this.tabuleiro = tabuleiro;
         
         if (this.tabuleiro.estado.size > 0) {
-            this.registrarPosicaoNoHistorico();
+            this.registrarPosicaoNoHistorico('branca'); // <-- Turno inicial fixado como branca
         }
     }
 
     /**
      * Serializa o estado atual para verificação de empate por tripla repetição.
-     * Inclui peças, direitos de roque e alvo de captura en passant.
+     * Inclui peças, direitos de roque, alvo de captura en passant e o turno atual.
      */
-    public gerarHashPosicao(): string {
+    public gerarHashPosicao(corDaVez: Cor): string { // <-- Recebe corDaVez
         const chavesOrdenadas = Array.from(this.tabuleiro.estado.keys()).sort();
         let hash = '';
         
@@ -30,21 +30,23 @@ export class VirtualBoardService {
         
         const roque = this.tabuleiro.direitosRoque;
         hash += `EP:${this.tabuleiro.alvoEnPassant || '-'}|`;
-        hash += `RQ:${roque.branca.roquePequeno ? 1:0}${roque.branca.roqueGrande ? 1:0}${roque.preta.roquePequeno ? 1:0}${roque.preta.roqueGrande ? 1:0}`;
+        hash += `RQ:${roque.branca.roquePequeno ? 1:0}${roque.branca.roqueGrande ? 1:0}${roque.preta.roquePequeno ? 1:0}${roque.preta.roqueGrande ? 1:0}|`;
+        hash += `T:${corDaVez.charAt(0)}`; // <-- NOVO: Adiciona o Turno ('b' ou 'p') ao Hash
         
         return hash;
     }
 
     /**
      * Incrementa o contador de ocorrências da posição atual.
+     * @param corDaVez Cor do jogador que tem o turno na posição atual.
      * @param zeraContagem Deve ser true em capturas ou lances de peão (regra dos 50 lances).
      */
-    public registrarPosicaoNoHistorico(zeraContagem: boolean = false): number {
+    public registrarPosicaoNoHistorico(corDaVez: Cor, zeraContagem: boolean = false): number { // <-- Recebe corDaVez
         if (zeraContagem) {
             this.tabuleiro.historicoPosicoes.clear();
         }
 
-        const hashAtual = this.gerarHashPosicao();
+        const hashAtual = this.gerarHashPosicao(corDaVez);
         const contagemPosicao = (this.tabuleiro.historicoPosicoes.get(hashAtual) || 0) + 1;
         this.tabuleiro.historicoPosicoes.set(hashAtual, contagemPosicao);
 

@@ -67,9 +67,9 @@ export class MatchController {
         try {
             const id = req.params.id as string;
             const origem = req.params.origem as string;
-            const corDoTurnoAtual = (req.query.cor as string) || 'branca'; 
-
-            const movimentos = this.matchService.obterMovimentosValidos(id, origem, corDoTurnoAtual as 'branca' | 'preta');
+            
+            // Backend assume a autoridade do turno atual diretamente da memória
+            const movimentos = this.matchService.obterMovimentosValidos(id, origem);
             
             return res.json({
                 pecaNaCasa: origem,
@@ -83,9 +83,11 @@ export class MatchController {
     public executarMovimento = async (req: Request, res: Response): Promise<any> => {
         try {
             const id = req.params.id as string;
-            const { origem, destino, corDoTurnoAtual, historicoCapturas = [], promocao } = req.body;
+            
+            // Removido o 'corDoTurnoAtual' do body. O Frontend não dita mais de quem é a vez.
+            const { origem, destino, historicoCapturas = [], promocao } = req.body;
 
-            const resposta = await this.matchService.executarJogada(id, origem, destino, corDoTurnoAtual, historicoCapturas, promocao);
+            const resposta = await this.matchService.executarJogada(id, origem, destino, historicoCapturas, promocao);
 
             if (resposta.sucesso) {
                 if (resposta.requerPromocao) {
@@ -112,11 +114,6 @@ export class MatchController {
         }
     }
 
-    /**
-     * Recebe a requisição assíncrona do front com a avaliação da jogada (motor Stockfish do cliente).
-     * Essa rota é projetada para ser leve, independente do estado em RAM, 
-     * focando apenas em adicionar o log analítico (código numérico) ao histórico da partida no banco de dados.
-     */
     public registrarAvaliacao = async (req: Request, res: Response): Promise<any> => {
         try {
             const id = req.params.id as string;
@@ -131,6 +128,23 @@ export class MatchController {
             return res.json({ sucesso: true });
         } catch (error: any) {
             return res.status(500).json({ erro: error.message || 'Erro ao registrar avaliação.' });
+        }
+    }
+
+    public desistir = async (req: Request, res: Response): Promise<any> => {
+        try {
+            const id = req.params.id as string;
+            const { corQueDesistiu } = req.body;
+
+            if (!corQueDesistiu) {
+                return res.status(400).json({ erro: 'Cor que desistiu não informada.' });
+            }
+
+            const statusPartida = await this.matchService.desistirPartida(id, corQueDesistiu);
+
+            return res.json({ sucesso: true, statusPartida });
+        } catch (error: any) {
+            return res.status(404).json({ erro: error.message });
         }
     }
 }
