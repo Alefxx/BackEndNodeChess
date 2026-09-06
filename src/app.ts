@@ -86,11 +86,11 @@ const MONGO_URI = process.env.MONGO_URI;
 
 mongoose.connect(MONGO_URI!)
     .then(() => {
-        console.log('✅ Conectado ao MongoDB Atlas');
+        console.log('Conectado ao MongoDB Atlas');
         app.listen(PORT, () => {
-            console.log(`🚀 Servidor rodando na porta ${PORT}`);
+            console.log(`Servidor rodando na porta ${PORT}`);
         });
     })
-    .catch((error) => console.error('❌ Erro no MongoDB:', error));
+    .catch((error) => console.error('Erro no MongoDB:', error));
 
 export default app;
