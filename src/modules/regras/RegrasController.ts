@@ -1,22 +1,34 @@
-// Execução do movimento físico através do controlador de peças
-const resultado = moveController.processarJogada('e4', 'e5', historicoCapturas);
+export class RegrasController {
+    private moveController: any;
+    private regrasService: any;
 
-if (resultado.sucesso) {
-    // Alternância de turno após confirmação de movimento válido
-    const proximoTurno = turnoAtual === 'branca' ? 'preta' : 'branca';
+    constructor(moveController: any, regrasService: any) {
+        this.moveController = moveController;
+        this.regrasService = regrasService;
+    }
 
-    // Instanciação do serviço de regras com o estado atualizado do tabuleiro
-    const regrasService = new RegrasService(boardService);
-    
-    // Avaliação única de condições de vitória, empate ou ameaça (xeque)
-    const status = regrasService.analisarStatusGeral(proximoTurno);
+    public avaliarTurnoEStatus(
+        origem: string, 
+        destino: string, 
+        turnoAtual: 'branca' | 'preta', 
+        historicoCapturas: string[]
+    ): void {
+        const resultado = this.moveController.processarJogada(origem, destino, historicoCapturas);
 
-    if (status.fimDeJogo) {
-        // Tratamento de encerramento (Persistência em banco e bloqueio de UI)
-        console.log(`Fim de jogo! Motivo: ${status.motivo}`);
-        if (status.vencedor) console.log(`Vitória das ${status.vencedor}`);
-    } else if (status.isXeque) {
-        // Evento de Xeque: Gatilho para efeitos visuais e sonoros no Front-end
-        console.log(`Xeque no rei ${proximoTurno}!`);
+        if (resultado.sucesso) {
+            const proximoTurno = turnoAtual === 'branca' ? 'preta' : 'branca';
+            const status = this.regrasService.analisarStatusGeral(proximoTurno);
+
+            if (status.fimDeJogo) {
+                console.log(`Fim de jogo! Motivo: ${status.motivo}`);
+                
+                if (status.vencedor) {
+                    console.log(`Vitória das ${status.vencedor}`);
+                }
+            } else if (status.isXeque) {
+                console.log(`Xeque no rei ${proximoTurno}!`);
+            }
+        }
     }
 }
+

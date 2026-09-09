@@ -1,9 +1,5 @@
-import { VirtualBoard, Posicao, Peca, Cor } from './VirtualBoard';
+import { VirtualBoard, Posicao, Peca, Cor, ResultadoMovimento } from './VirtualBoard';
 
-/**
- * Gerencia o estado físico e consultas analíticas do tabuleiro.
- * Focado em detecção de xeque, histórico de posições e manipulação de peças.
- */
 export class VirtualBoardService {
     public tabuleiro: VirtualBoard;
 
@@ -11,15 +7,31 @@ export class VirtualBoardService {
         this.tabuleiro = tabuleiro;
         
         if (this.tabuleiro.estado.size > 0) {
-            this.registrarPosicaoNoHistorico('branca'); // <-- Turno inicial fixado como branca
+            this.registrarPosicaoNoHistorico('branca');
         }
     }
 
-    /**
-     * Serializa o estado atual para verificação de empate por tripla repetição.
-     * Inclui peças, direitos de roque, alvo de captura en passant e o turno atual.
-     */
-    public gerarHashPosicao(corDaVez: Cor): string { // <-- Recebe corDaVez
+    public promoverPeca(posicao: string, novoTipo: string): void {
+        const peca = this.tabuleiro.getPecaNaCasa(posicao);
+        if (peca && peca.tipo === 'peao') {
+            peca.tipo = novoTipo as any;
+            this.tabuleiro.setPeca(posicao, peca);
+        }
+    }
+
+    public mover(origem: Posicao, destino: Posicao): ResultadoMovimento {
+        const peca = this.tabuleiro.getPecaNaCasa(origem);
+        
+        if (peca) {
+            this.tabuleiro.setPeca(destino, peca);
+            this.tabuleiro.removerPeca(origem);
+            return { sucesso: true } as ResultadoMovimento;
+        }
+        
+        return { sucesso: false } as ResultadoMovimento;
+    }
+
+    public gerarHashPosicao(corDaVez: Cor): string {
         const chavesOrdenadas = Array.from(this.tabuleiro.estado.keys()).sort();
         let hash = '';
         
@@ -31,17 +43,12 @@ export class VirtualBoardService {
         const roque = this.tabuleiro.direitosRoque;
         hash += `EP:${this.tabuleiro.alvoEnPassant || '-'}|`;
         hash += `RQ:${roque.branca.roquePequeno ? 1:0}${roque.branca.roqueGrande ? 1:0}${roque.preta.roquePequeno ? 1:0}${roque.preta.roqueGrande ? 1:0}|`;
-        hash += `T:${corDaVez.charAt(0)}`; // <-- NOVO: Adiciona o Turno ('b' ou 'p') ao Hash
+        hash += `T:${corDaVez.charAt(0)}`;
         
         return hash;
     }
 
-    /**
-     * Incrementa o contador de ocorrências da posição atual.
-     * @param corDaVez Cor do jogador que tem o turno na posição atual.
-     * @param zeraContagem Deve ser true em capturas ou lances de peão (regra dos 50 lances).
-     */
-    public registrarPosicaoNoHistorico(corDaVez: Cor, zeraContagem: boolean = false): number { // <-- Recebe corDaVez
+    public registrarPosicaoNoHistorico(corDaVez: Cor, zeraContagem: boolean = false): number {
         if (zeraContagem) {
             this.tabuleiro.historicoPosicoes.clear();
         }
@@ -53,9 +60,6 @@ export class VirtualBoardService {
         return contagemPosicao;
     }
 
-    /**
-     * Movimentação forçada para lances secundários (ex: Torre no Roque).
-     */
     public forcarMovimento(origem: Posicao, destino: Posicao): void {
         const peca = this.tabuleiro.getPecaNaCasa(origem);
         if (peca) { 
@@ -64,16 +68,10 @@ export class VirtualBoardService {
         }
     }
 
-    /**
-     * Restaura uma peça em uma casa específica. Útil para desfazer simulações de xeque.
-     */
     public restaurarPeca(posicao: Posicao, peca: Peca): void { 
         this.tabuleiro.setPeca(posicao, peca); 
     }
 
-    /**
-     * Localiza a coordenada atual do Rei da cor solicitada.
-     */
     public encontrarPosicaoRei(cor: Cor): Posicao | null {
         for (const [posicao, peca] of this.tabuleiro.estado.entries()) {
             if (peca.tipo === 'rei' && peca.cor === cor) return posicao;
@@ -81,10 +79,6 @@ export class VirtualBoardService {
         return null;
     }
 
-    /**
-     * Verifica se o Rei está sob ataque direto de peças inimigas.
-     * Utiliza técnica de busca reversa a partir da posição do Rei.
-     */
     public verificarReiEmXeque(corDoRei: Cor): boolean {
         const posicaoRei = this.encontrarPosicaoRei(corDoRei);
         if (!posicaoRei) return false;
@@ -93,7 +87,6 @@ export class VirtualBoardService {
         const linha = parseInt(posicaoRei.charAt(1), 10);
         const corInimiga = corDoRei === 'branca' ? 'preta' : 'branca';
 
-        // 1. Saltos de Cavalo
         const pulosCavalo: [number, number][] = [ [1, 2], [2, 1], [2, -1], [1, -2], [-1, -2], [-2, -1], [-2, 1], [-1, 2] ];
         for (const [df, dl] of pulosCavalo) {
             const a = String.fromCharCode(arquivo + df);
@@ -104,7 +97,6 @@ export class VirtualBoardService {
             }
         }
 
-        // 2. Linhas e Colunas (Torres e Rainhas)
         const retas: [number, number][] = [[0, 1], [0, -1], [1, 0], [-1, 0]];
         for (const [df, dl] of retas) {
             for (let i = 1; i <= 7; i++) {
@@ -119,7 +111,6 @@ export class VirtualBoardService {
             }
         }
 
-        // 3. Diagonais (Bispos e Rainhas)
         const diagonais: [number, number][] = [[1, 1], [1, -1], [-1, 1], [-1, -1]];
         for (const [df, dl] of diagonais) {
             for (let i = 1; i <= 7; i++) {
@@ -134,7 +125,6 @@ export class VirtualBoardService {
             }
         }
 
-        // 4. Peões Inimigos (Ataque diagonal)
         const direcaoInimiga = corDoRei === 'branca' ? 1 : -1;
         const linhaPeao = linha + direcaoInimiga;
         if (linhaPeao >= 1 && linhaPeao <= 8) {
@@ -150,7 +140,6 @@ export class VirtualBoardService {
             }
         }
 
-        // 5. Rei Inimigo (Adjacência proibida)
         const direcoesRei: [number, number][] = [...retas, ...diagonais];
         for (const [df, dl] of direcoesRei) {
             const a = String.fromCharCode(arquivo + df);
@@ -164,3 +153,4 @@ export class VirtualBoardService {
         return false;
     }
 }
+
